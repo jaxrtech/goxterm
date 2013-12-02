@@ -52,36 +52,6 @@ function makeArray() {
     this[i + 1] = makeArray.arguments[i];
 }
 
-/*
-function getDateTime() {
-    var months = new makeArray('January', 'February',' March', 'April', 'May',
-    'June','July','August','September','October','November','December');
-    var date = new Date();
-    var day = date.getDate();
-    var month = date.getMonth() + 1;
-    var yy = date.getYear();
-    var year = (yy < 1000) ? yy + 1900 : yy;
-    
-    var hours = date.getHours() % 12;
-    var minutes = date.getMinutes();
-    var s = date.getSeconds();
-    var seconds = (s < 10) ? "0" + s : s;
-    
-    var period = getDayPeriod();
-    function getDayPeriod() {
-        var hours = date.getHours();
-        if (hours === 0) return "MD"; // midnight
-        if (hours > 0 && hours < 12) return "AM";
-        if (hours == 12) return "NN"; // noon
-        if (hours > 12 && hours < 23) return "PM";
-    }
-
-    return day + " " + months[month] + " " + year + " | " 
-        + hours + ":" + minutes + ":" + seconds + " " + period + " | ";
-    // "24 November 2013 | 4:15:32 PM | "
-}
-*/
-
 function getFormattedDateTime() {
     // "24 November 2013 | 04:15:32 PM | "
     return moment().format("DD MMM YYYY [|] hh:mm:ss.SSS A [| ]");
@@ -132,7 +102,7 @@ function fixedIntToString(amount, places) {
 function formatDelta(delta, currency) {
     var formattedCurrency = currency.toUpperCase();
     var n = floorCurrency(delta, currency);
-    var fixed = n.toFixed(DECIMAL_PLACES[currency])
+    var fixed = n.toFixed(DECIMAL_PLACES[currency]);
     
     if (n === 0) {
         return formattedCurrency + " &plusmn;0";
@@ -185,22 +155,6 @@ jQuery(document).ready(function($) {
             }
 
             if (buy === "now" && isFinite(sell)) {
-                /*
-                currentPrice(function(data) {
-                    if (data instanceof Error) {
-                        self.error(data.message);
-                        self.resume();
-                        return;
-                    }
-
-                    // You buy at the sell price
-                    buy = parseFloat(data.sell.value);
-                    message = generateMessage(money, buy, sell);
-                    self.echo(message);
-                    self.resume();
-                });
-                */
-                
                 asyncTermApiCall(currentPrice, self, function(data) {
                     // You buy at the sell price
                     buy = parseFloat(data.sell.value);
@@ -285,30 +239,39 @@ jQuery(document).ready(function($) {
                 switch (data.private) {
                     case "ticker":
                         // [ticker] bid: USD 800.23190 | ask: 802.13200
-                        ticker = data.ticker;
-                        currency = ticker.buy.currency;
-                        message += "[ticker] " 
-                            + "bid: " + currency + " " + ticker.buy.value + " | "
-                            + "ask: " + currency + " " + ticker.sell.value;
+                        var ticker = data.ticker;
+                        var currency = ticker.buy.currency;
+                        message += "[ticker] " +
+                            "bid: " + currency + " " + ticker.buy.value + " | " +
+                            "ask: " + currency + " " + ticker.sell.value;
                         break;
                     case "trade":
                         // [trade] bid: BTC 2.32000000 @ USD 800.23190
-                        trade = data.trade;
-                        currency = trade.price_currency
-                        message += "[trade] " 
-                            + trade.trade_type + ": " 
-                            + "BTC " + fixedIntToString(trade.amount_int, DECIMAL_PLACES.BTC) + " "
-                            + "@ " + currency + " " + fixedIntToString(trade.price_int, DECIMAL_PLACES[currency]);
+                        var trade = data.trade;
+                        var currency = trade.price_currency;
+                        var trade_amount = fixedIntToString(trade.amount_int, DECIMAL_PLACES.BTC);
+                        price = fixedIntToString(trade.price_int, DECIMAL_PLACES[currency]);
+
+                        message += "[trade] " +
+                            trade.trade_type + ": " +
+                            "BTC " + trade_amount + " " +
+                            "@ " + currency + " " + price;
                         break;
                     case "depth":
                         // [depth] ask: @ USD 14.13000 | BTC -2.71000000 -> BTC 8.49766000
-                        depth = data.depth;
-                        currency = depth.currency;
-                        message += "[depth] "
-                            + depth.type_str + ": "
-                            + "@ " + currency + " " + fixedIntToString(depth.price_int, DECIMAL_PLACES[currency]) + " | "
-                            + "BTC " + fixedIntToString(depth.volume_int, DECIMAL_PLACES.BTC) + " "
-                            + "-> BTC " + fixedIntToString(depth.total_volume_int, DECIMAL_PLACES.BTC);
+                        var depth = data.depth;
+                        var currency = depth.currency;
+                        var price = fixedIntToString(depth.price_int, DECIMAL_PLACES[currency]);
+                        var volume = fixedIntToString(depth.volume_int, DECIMAL_PLACES.BTC);
+                        var total_volume = fixedIntToString(depth.total_volume_int, DECIMAL_PLACES.BTC);
+
+                        // TODO: move these variables out to pretty it up
+                        message += "[depth] " +
+                            depth.type_str + ": " +
+                            "@ " + currency + " " + price + " | " +
+                            "BTC " + volume + " " +
+                            "-> BTC " + total_volume;
+                        break;
                 }
                 
                 self.echo(message);
