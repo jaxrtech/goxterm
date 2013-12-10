@@ -1,9 +1,99 @@
 var API_BASE = "https://data.mtgox.com/api/2/";
+var globalAuth;
 
-// Filled out with the login feature
-var MTGOX_AUTH_KEYS = {
-    key: null,
-    secret: null
+function ApiAuth(key, secret) {
+    this.key = key;
+    this.secret = secret;
+};
+
+ApiAuth.prototype.generateHash = function(path, data) {
+    secret = CryptoJS.enc.Base64.parse(this.secret);
+    var message = path + String.fromCharCode(0) + data;
+    var digest = CryptoJS.HmacSHA512(message, this.secret);
+    var result = CryptoJS.enc.Base64.stringify(digest);
+    return result;
+};
+
+ApiAuth.prototype.tonce = function() {
+    return new Date().getTime();
+};
+
+ApiAuth.prototype.nonce = function() {
+    return new Date().getTime();
+};
+
+ApiAuth.prototype.encodeObjectToUri = function(obj) {
+    var str = [];
+    for (var p in obj) {
+        if (obj.hasOwnProperty(p)) {
+            str.push(encodeURI(p) + "=" + encodeURI(obj[p]));
+        }
+    }
+    return str.join("&");
+};
+
+ApiAuth.prototype.getParameters = function(path) {
+    var params = {
+        'tonce': this.tonce(),
+        'nonce': this.nonce()
+    };
+    
+    var url = this.encodeObjectToUri(params);
+    var data = this.encodeObjectToUri(params);
+    
+    var headers = {
+        'Rest-Key': this.key,
+        'Rest-Sign': this.generateHash(path, data)
+    };
+    
+    return {url:url, params: params, data: data, headers: headers};
+};
+
+function ApiRequester() { }
+
+ApiRequester.prototype.runRequest = function(path, params, auth, callback) {
+    if (params == null) {
+        params = {};
+    }
+
+    // Logging stuff
+    //echo.info("Running API request. base='%s', path='%s', params=%s" % (BASE_PATH, path, params))
+
+    var url = API_BASE + path;
+    if (auth != null) {
+        var params = auth.getParameters(path);
+        if (params.url.length > 0) {
+            url = url + '?' + params.url;
+        }
+        
+        $.ajax({
+            url: url,
+            type: 'post',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'Rest-Key': params.headers['Rest-Key'],
+                'Rest-Sign': params.headers['Rest-Sign']
+            },
+            dateType: 'json',
+            error: function(jqXHR, textStatus, errorThrown) {
+                callback(new Error("Error: Request failed (" + textStatus + ")"));
+                return;
+            },
+            success: function(json, textStatus, jqXHR) {
+                callback(JSON.parse(json));
+                return;
+            }
+        });
+    } else {
+        $.getJSON(API_BASE + "BTCUSD/money/ticker", function(data) {
+            if (data.result != "success") {
+                callback(new Error("Error: Unable to retrieve price"));
+            }
+
+            data = data.data; // unwrap the json
+            callback(data);
+        });
+    }
 };
 
 var MTGOX_CHANNELS = {
@@ -11,15 +101,7 @@ var MTGOX_CHANNELS = {
     depth: '24e67e0d-1cad-4cc0-9e7a-f8523ef460fe',
     ticker: 'd5f06780-30a8-4a48-a2f8-7ed181b4a13f'
 };
-
-function generateHash(secret, path, data) {
-    secret = CryptoJS.enc.Base64.parse(secret);
-    var message = path + String.fromCharCode(0) + data;
-    var digest = CryptoJS.HmacSHA512(message, secret);
-    var result = CryptoJS.enc.Base64.stringify(digest);
-    return result;
-}
-
+    
 function asyncTermApiCall(func, context, callback) {
     var self = context;
     
@@ -145,6 +227,7 @@ jQuery(document).ready(function($) {
                 self.echo("Ask: " + data.sell.currency + " " + data.sell.value);
             });
         },
+        
         profit: function(money, buy, sell) {
             var self = this;
             
@@ -183,14 +266,16 @@ jQuery(document).ready(function($) {
                 self.echo(message);
             }
         },
+        
         target: function(ask, feePrecent) {
             var self = this;
             
             function f(ask) {
                 var fee = 1 * feePrecent;
                 var bid = (1 + fee)/((1 - fee) / ask);
-                var str = formatCurrency(bid, 'USD');
-                return str;
+                var result = formatCurrency(bid, 'USD');
+                var delta = formatDelta(bid - ask, 'USD');
+                return result + " (" + delta + ")";
             }
             
             if (isFinite(ask)) {
@@ -217,15 +302,25 @@ jQuery(document).ready(function($) {
                 throw new Error("Invalid value for ask price. Only a number or 'now' (to get the current ask price) is valid.");
             }
         },
+        
         test: function() {
             var self = this;
             
+            if (globalAuth === null) {
+                self.error("Error: Authentication required. Use 'auth' command.");
+                return;
+            }
+            
             self.pause();
-            $.getJSON(API_BASE + "BTCUSD/money/ticker", function(data) {
+            var url = "BTCUSD/money/ticker";
+            var requester = new ApiRequester();
+            
+            requester.runRequest(url, {}, globalAuth, function(data) {
                 self.echo(data.result);
                 self.resume();
             });
         },
+        
         stream: function() {
             var self = this;
             
@@ -279,6 +374,7 @@ jQuery(document).ready(function($) {
                 self.pause();
             });
         },
+        
         loop: function() {
             var self = this;
             
@@ -300,6 +396,14 @@ jQuery(document).ready(function($) {
                 }, rand);
             }());
         },
+        
+        auth: function(key, secret) {
+            var self = this;
+            globalAuth = new ApiAuth(key, secret);
+            
+            self.echo("API authentication keys set.");
+        },
+        
         test_hash: function(secret, path, data) {
             var self = this;
             
